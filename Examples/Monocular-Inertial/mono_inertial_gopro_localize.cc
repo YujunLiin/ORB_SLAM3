@@ -160,7 +160,7 @@ int main(int argc, char **argv) {
   bool disable_gui = false;
   app.add_flag("-g,--disable_gui", disable_gui);
 
-  bool disable_mapping = false;
+  bool disable_mapping = true ;
   app.add_flag("-m,--disable_mapping", disable_mapping);
 
   try {
