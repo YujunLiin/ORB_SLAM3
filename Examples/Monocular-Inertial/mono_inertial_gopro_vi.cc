@@ -133,9 +133,17 @@ void draw_gripper_mask(cv::Mat &img){
 
 
 int main(int argc, char **argv) {
-  if (argc != 5) {
+  // original code
+  // if (argc != 5) {
+  //   cerr << endl
+  //        << "Usage: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry"
+  //        << endl;
+  //   return 1;
+  // }
+  // For load_map
+  if (argc != 6) {
     cerr << endl
-         << "Usage: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry"
+         << "Usage: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry path_to_atlas_map"
          << endl;
     return 1;
   }
@@ -158,7 +166,7 @@ int main(int argc, char **argv) {
   vector<double> vTimestamps;
   // Create SLAM system. It initializes all system threads and gets ready to
   // process frames.
-  ORB_SLAM3::System SLAM(argv[1], argv[2], ORB_SLAM3::System::IMU_MONOCULAR, true);
+  ORB_SLAM3::System SLAM(argv[1], argv[2], ORB_SLAM3::System::IMU_MONOCULAR, true,argv[5]);
 
   // Vector for tracking time statistics
   vector<float> vTimesTrack;
@@ -170,7 +178,6 @@ int main(int argc, char **argv) {
   }
 
   // Main loop
-  int cnt_empty_frame = 0;
   int img_id = 0;
   int nImages = cap.get(cv::CAP_PROP_FRAME_COUNT);
   double fps = cap.get(cv::CAP_PROP_FPS);
@@ -182,14 +189,6 @@ int main(int argc, char **argv) {
     cv::Mat im,im_track;
     bool success = cap.read(im);
 
-    if (!success) {
-      break;
-      // cnt_empty_frame++;
-      // // std::cout<<"Empty frame...\n";
-      // if (cnt_empty_frame > 1000)
-      //   break;
-      // continue;
-    }
       im_track = im.clone();
       double tframe = cap.get(cv::CAP_PROP_POS_MSEC) * MS_TO_S;
 
