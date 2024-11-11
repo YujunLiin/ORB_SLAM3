@@ -134,16 +134,10 @@ void draw_gripper_mask(cv::Mat &img){
 
 int main(int argc, char **argv) {
   // original code
-  // if (argc != 5) {
-  //   cerr << endl
-  //        << "Usage: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry"
-  //        << endl;
-  //   return 1;
-  // }
-  // For load_map
-  if (argc != 6) {
+  if (argc != 5 and argc != 6) {
     cerr << endl
-         << "Usage: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry path_to_atlas_map"
+         << "Usage for creating map: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry\n"
+         << "Usage for loading map: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry path_to_atlas_map"
          << endl;
     return 1;
   }
@@ -164,9 +158,20 @@ int main(int argc, char **argv) {
 
   // Retrieve paths to images
   vector<double> vTimestamps;
+  // Tag for Aruco marker
+  cv::Ptr<cv::aruco::Dictionary> aruco_dict = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+  int init_tag_id = 13;
+  float init_tag_size = 0.16; // in meters
+  
+  std::string load_map, save_map; 
   // Create SLAM system. It initializes all system threads and gets ready to
   // process frames.
-  ORB_SLAM3::System SLAM(argv[1], argv[2], ORB_SLAM3::System::IMU_MONOCULAR, true,argv[5]);
+  if(argc == 6){
+    load_map = argv[5];
+  }
+  ORB_SLAM3::System SLAM(argv[1], argv[2], ORB_SLAM3::System::IMU_MONOCULAR, 
+    true,load_map,save_map,
+    aruco_dict, init_tag_id, init_tag_size);
 
   // Vector for tracking time statistics
   vector<float> vTimesTrack;
@@ -225,7 +230,8 @@ int main(int argc, char **argv) {
 #endif
 
       // Pass the image to the SLAM system
-      SLAM.TrackMonocular(im_track, tframe, vImuMeas);
+      // SLAM.TrackMonocular(im_track, tframe, vImuMeas);
+      auto result = SLAM.LocalizeMonocular(im_track, tframe, vImuMeas);
 
 #ifdef COMPILEDWITHC14
       std::chrono::steady_clock::time_point t2 =
