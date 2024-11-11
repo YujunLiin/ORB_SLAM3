@@ -30,20 +30,19 @@
 #include <System.h>
 
 #include <json.h>
+#include <CLI11.hpp>
 
 using namespace std;
 using nlohmann::json;
 const double MS_TO_S = 1e-3; ///< Milliseconds to second conversion
 
-bool LoadTelemetry(const string &path_to_telemetry_file,
-                   vector<double> &vTimeStamps,
-                   vector<double> &coriTimeStamps,
-                   vector<cv::Point3f> &vAcc,
-                   vector<cv::Point3f> &vGyro) {
+bool LoadTelemetry(const string &path_to_telemetry_file,vector<double> &vTimeStamps,vector<double> &coriTimeStamps,vector<cv::Point3f> &vAcc,vector<cv::Point3f> &vGyro) 
+{
 
     std::ifstream file;
     file.open(path_to_telemetry_file.c_str());
-    if (!file.is_open()) {
+    if (!file.is_open()) 
+    {
       return false;
     }
     json j;
@@ -63,7 +62,6 @@ bool LoadTelemetry(const string &path_to_telemetry_file,
       cv::Point3f v((float)e["value"][0], (float)e["value"][1], (float)e["value"][2]);
       sorted_gyr.insert(std::make_pair((double)e["cts"] * MS_TO_S, v));
     }
-
     double imu_start_t = sorted_acc.begin()->first;
     for (auto acc : sorted_acc) {
         vTimeStamps.push_back(acc.first-imu_start_t);
@@ -129,24 +127,74 @@ void draw_mirror_mask(cv::Mat &img, cv::Mat &mask)
 
 
 int main(int argc, char **argv) {
-  // original code
-  if (argc != 6 and argc != 7) {
-    cerr << endl
-         << "Usage for creating map: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry path_to_mask\n"
-         << "Usage for loading map: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry path_to_atlas_map path_to_mask"
-         << endl;
-    return 1;
+  // CLI parsing
+  CLI::App app{"GoPro SLAM"};
+
+  std::string vocabulary = "../../Vocabulary/ORBvoc.txt";
+  app.add_option("-v,--vocabulary", vocabulary)->capture_default_str();
+
+  std::string setting = "gopro10_maxlens_fisheye_setting_v1.yaml";
+  app.add_option("-s,--setting", setting)->capture_default_str();
+
+  std::string input_video;
+  app.add_option("-i,--input_video", input_video)->required();
+
+  std::string input_imu_json;
+  app.add_option("-j,--input_imu_json", input_imu_json)->required();
+
+  std::string output_trajectory_csv;
+  app.add_option("-o,--output_trajectory_csv", output_trajectory_csv);
+
+  std::string load_map;
+  app.add_option("-l,--load_map", load_map);
+
+  std::string save_map;
+  app.add_option("--save_map", save_map);
+
+  bool enable_gui = true;
+  app.add_flag("-g,--enable_gui", enable_gui);
+
+  int num_threads = 4;
+  app.add_flag("-n,--num_threads", num_threads);
+
+  std::string mask_img_path;
+  app.add_option("--mask_img", mask_img_path);
+
+  // Aruco tag for initialization
+  int aruco_dict_id = cv::aruco::DICT_4X4_50;
+  app.add_option("--aruco_dict_id", aruco_dict_id);
+
+  int init_tag_id = 13;
+  app.add_option("--init_tag_id", init_tag_id);
+
+  float init_tag_size = 0.16; // in meters
+  app.add_option("--init_tag_size", init_tag_size);
+
+  // if lost more than max_lost_frames, terminate
+  // disable the check if <= 0
+  int max_lost_frames = -1;
+  app.add_option("--max_lost_frames", max_lost_frames);
+
+  bool mask_mirrors = false;
+  app.add_flag("--mask_mirrors", mask_mirrors);
+
+  try {
+    app.parse(argc, argv);
+  } catch (const CLI::ParseError &e) {
+      return app.exit(e);
   }
+
+
 
   vector<double> imuTimestamps;
   vector<double> camTimestamps;
   vector<cv::Point3f> vAcc, vGyr;
-  LoadTelemetry(argv[4], imuTimestamps, camTimestamps, vAcc, vGyr);
+  LoadTelemetry(input_imu_json, imuTimestamps, camTimestamps, vAcc, vGyr);
 
   // open settings to get image resolution
-  cv::FileStorage fsSettings(argv[2], cv::FileStorage::READ);
+  cv::FileStorage fsSettings(setting, cv::FileStorage::READ);
   if(!fsSettings.isOpened()) {
-     cerr << "Failed to open settings file at: " << argv[2] << endl;
+     cerr << "Failed to open settings file at: " << setting << endl;
      exit(-1);
   }
   cv::Size img_size(fsSettings["Camera.width"],fsSettings["Camera.height"]);
@@ -154,31 +202,26 @@ int main(int argc, char **argv) {
 
   // Retrieve paths to images
   vector<double> vTimestamps;
-  // Tag for Aruco marker
-  cv::Ptr<cv::aruco::Dictionary> aruco_dict = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
-  int init_tag_id = 13;
-  float init_tag_size = 0.16; // in meters
   
-  std::string load_map, save_map; 
   // Create SLAM system. It initializes all system threads and gets ready to
   // process frames.
-  if(argc == 7){
-    load_map = argv[5];
-  }
-  ORB_SLAM3::System SLAM(argv[1], argv[2], ORB_SLAM3::System::IMU_MONOCULAR, 
-    true,load_map,save_map,
-    aruco_dict, init_tag_id, init_tag_size);
+  cv::Ptr<cv::aruco::Dictionary> aruco_dict = cv::aruco::getPredefinedDictionary(aruco_dict_id);
+  ORB_SLAM3::System SLAM(
+    vocabulary, setting, 
+    ORB_SLAM3::System::IMU_MONOCULAR, 
+    enable_gui, load_map, save_map,
+    aruco_dict, init_tag_id, init_tag_size
+  );
 
   // Vector for tracking time statistics
   vector<float> vTimesTrack;
-  cv::VideoCapture cap(argv[3]);
+  cv::VideoCapture cap(input_video, cv::CAP_FFMPEG);
   // Check if camera opened successfully
   if (!cap.isOpened()) {
     std::cout << "Error opening video stream or file" << endl;
     return -1;
   }
   cv::Mat mask_img;
-  std::string mask_img_path=argv[5];
   if (!mask_img_path.empty()) {
     mask_img = cv::imread(mask_img_path, cv::IMREAD_GRAYSCALE);
     if (mask_img.size() != img_size) {
@@ -213,7 +256,10 @@ int main(int argc, char **argv) {
 
       cv::resize(im_track, im_track, img_size);
       // draw_gripper_mask(im_track); 
-      draw_mirror_mask(im_track, mask_img);
+      if(mask_mirrors)
+      {
+        draw_mirror_mask(im_track, mask_img);
+      }
 
       // gather imu measurements between frames
       // Load imu measurements from previous frame
@@ -278,8 +324,10 @@ int main(int argc, char **argv) {
   // Save camera trajectory
   // SLAM.SaveTrajectoryEuRoC("CameraTrajectory.txt");
   // SLAM.SaveKeyFrameTrajectoryEuRoC("KeyFrameTrajectory.txt");
-  SLAM.SaveTrajectoryTUM("TUM_CameraTrajectory.txt");
-  SLAM.SaveKeyFrameTrajectoryTUM("TUM_KeyFrameTrajectory.txt");
+  if (!output_trajectory_csv.empty()) 
+  {
+    SLAM.SaveTrajectoryCSV(output_trajectory_csv);
+  }
 
   return 0;
 }
