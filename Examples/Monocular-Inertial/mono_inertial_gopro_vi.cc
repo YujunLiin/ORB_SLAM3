@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
       return app.exit(e);
   }
 
-
+  cv::setNumThreads(num_threads);
 
   vector<double> imuTimestamps;
   vector<double> camTimestamps;
@@ -260,6 +260,7 @@ int main(int argc, char **argv) {
       {
         draw_mirror_mask(im_track, mask_img);
       }
+      // cv::imshow("Frame", im_track);
 
       // gather imu measurements between frames
       // Load imu measurements from previous frame
