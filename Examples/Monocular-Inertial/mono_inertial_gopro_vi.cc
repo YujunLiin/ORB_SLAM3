@@ -56,23 +56,13 @@ bool LoadTelemetry(const string &path_to_telemetry_file,
     std::map<double, cv::Point3f> sorted_gyr;
 
     for (const auto &e : accl) {
-      cv::Point3f v((float)e["value"][1], (float)e["value"][2], (float)e["value"][0]);
+      cv::Point3f v((float)e["value"][0], (float)e["value"][1], (float)e["value"][2]);
       sorted_acc.insert(std::make_pair((double)e["cts"] * MS_TO_S, v));
     }
     for (const auto &e : gyro) {
-      cv::Point3f v((float)e["value"][1], (float)e["value"][2], (float)e["value"][0]);
+      cv::Point3f v((float)e["value"][0], (float)e["value"][1], (float)e["value"][2]);
       sorted_gyr.insert(std::make_pair((double)e["cts"] * MS_TO_S, v));
     }
-//    for (const auto &e : gps5) {
-//      Eigen::Vector3d v;
-//      Eigen::Vector2d vel2d_vel3d;
-//      v << e["value"][0], e["value"][1], e["value"][2];
-//      vel2d_vel3d << e["value"][3], e["value"][4];
-//      telemetry.gps.lle.emplace_back(v);
-//      telemetry.gps.timestamp_ms.emplace_back(e["cts"]);
-//      telemetry.gps.precision.emplace_back(e["precision"]);
-//      telemetry.gps.vel2d_vel3d.emplace_back(vel2d_vel3d);
-//    }
 
     double imu_start_t = sorted_acc.begin()->first;
     for (auto acc : sorted_acc) {
@@ -131,13 +121,19 @@ void draw_gripper_mask(cv::Mat &img){
   cv::fillPoly(img, polygons, cv::Scalar(0));
 }
 
+void draw_mirror_mask(cv::Mat &img, cv::Mat &mask)
+{
+  draw_gripper_mask(mask); //draw mask for mirrors
+  img.setTo(cv::Scalar(0,0,0), mask);
+}
+
 
 int main(int argc, char **argv) {
   // original code
-  if (argc != 5 and argc != 6) {
+  if (argc != 6 and argc != 7) {
     cerr << endl
-         << "Usage for creating map: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry\n"
-         << "Usage for loading map: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry path_to_atlas_map"
+         << "Usage for creating map: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry path_to_mask\n"
+         << "Usage for loading map: ./mono_inertial_gopro_vi path_to_vocabulary path_to_settings path_to_video path_to_telemetry path_to_atlas_map path_to_mask"
          << endl;
     return 1;
   }
@@ -166,7 +162,7 @@ int main(int argc, char **argv) {
   std::string load_map, save_map; 
   // Create SLAM system. It initializes all system threads and gets ready to
   // process frames.
-  if(argc == 6){
+  if(argc == 7){
     load_map = argv[5];
   }
   ORB_SLAM3::System SLAM(argv[1], argv[2], ORB_SLAM3::System::IMU_MONOCULAR, 
@@ -180,6 +176,15 @@ int main(int argc, char **argv) {
   if (!cap.isOpened()) {
     std::cout << "Error opening video stream or file" << endl;
     return -1;
+  }
+  cv::Mat mask_img;
+  std::string mask_img_path=argv[5];
+  if (!mask_img_path.empty()) {
+    mask_img = cv::imread(mask_img_path, cv::IMREAD_GRAYSCALE);
+    if (mask_img.size() != img_size) {
+      std::cout << "Mask img size mismatch! Converting " << mask_img.size() << " to " << img_size << endl;
+      cv::resize(mask_img, mask_img, img_size);
+    }
   }
 
   // Main loop
@@ -207,7 +212,8 @@ int main(int argc, char **argv) {
       ++img_id;
 
       cv::resize(im_track, im_track, img_size);
-      draw_gripper_mask(im_track);
+      // draw_gripper_mask(im_track); 
+      draw_mirror_mask(im_track, mask_img);
 
       // gather imu measurements between frames
       // Load imu measurements from previous frame
